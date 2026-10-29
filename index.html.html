@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squoosh-Inspired Bulk Compressor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- High-Quality Compression Engine -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.1/dist/browser-image-compression.js"></script>
+    <script>
+        // Check local storage for theme preference to prevent FOUC (Flash of Unstyled Content)
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .dropzone-active {
+            border-color: #ec4899 !important; /* pink-500 */
+            background-color: rgba(236, 72, 153, 0.05) !important;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1d24; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        
+        /* Progress Bar Animation */
+        .progress-bar-stripes {
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+            background-size: 1rem 1rem;
+            animation: progress-stripes 1s linear infinite;
+        }
+        @keyframes progress-stripes {
+            from { background-position: 1rem 0; }
+            to { background-position: 0 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 flex flex-col items-center bg-slate-50 dark:bg-[#0f1115] text-slate-900 dark:text-[#f8fafc] transition-colors duration-300">
+
+    <div class="w-full max-w-5xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-10 mt-4 relative">
+            <div class="absolute right-0 top-0">
+                <button id="themeToggle" class="p-2 rounded-full bg-slate-200 dark:bg-gray-800 text-slate-600 dark:text-gray-300 hover:bg-pink-100 dark:hover:bg-pink-900/30 transition-colors" title="Toggle Light/Dark Mode">
+                    <!-- Sun Icon (shows in dark mode) -->
+                    <svg class="w-6 h-6 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <!-- Moon Icon (shows in light mode) -->
+                    <svg class="w-6 h-6 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+            </div>
+            <div class="inline-flex items-center justify-center p-3 bg-pink-100 dark:bg-pink-500/10 rounded-full mb-4">
+                <svg class="w-8 h-8 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            <h1 class="text-4xl md:text-5xl font-bold mb-4 tracking-tight text-slate-800 dark:text-white">
+                Bulk <span class="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-fuchsia-400">Compressor</span>
+            </h1>
+            <p class="text-slate-600 dark:text-gray-400 text-lg max-w-2xl mx-auto">High-quality, in-browser image optimization. Powered by Web Workers to keep your UI smooth.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Column: Settings & Dropzone -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Settings Panel -->
+                <div class="bg-white dark:bg-[#15181e] border border-slate-200 dark:border-gray-800 rounded-2xl p-6 shadow-xl relative overflow-hidden transition-colors duration-300">
+                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-fuchsia-500"></div>
+                    <h2 class="text-lg font-semibold mb-5 flex items-center gap-2 text-slate-800 dark:text-white">
+                        <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                        Settings
+                    </h2>
+                    
+                    <div class="space-y-5">
+                        <div>
+                            <label class="text-sm font-medium text-slate-700 dark:text-gray-300 mb-2 flex justify-between">
+                                <span>Quality</span>
+                                <span id="qualityValue" class="text-pink-600 dark:text-pink-400">80%</span>
+                            </label>
+                            <input type="range" id="quality" min="1" max="100" value="80" class="w-full h-1.5 bg-slate-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-pink-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">Format</label>
+                            <select id="format" class="w-full bg-slate-50 dark:bg-[#1a1d24] border border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-200 text-sm rounded-lg focus:ring-pink-500 focus:border-pink-500 block p-2.5 outline-none transition-colors">
+                                <option value="image/webp">WebP (Recommended)</option>
+                                <option value="image/avif">AVIF (Modern Browsers)</option>
+                                <option value="image/jpeg">JPEG</option>
+                                <option value="image/png">PNG</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">Max Width/Height (px)</label>
+                            <input type="number" id="maxDimension" placeholder="e.g. 1920 (Optional)" class="w-full bg-slate-50 dark:bg-[#1a1d24] border border-slate-200 dark:border-gray-700 text-slate-900 dark:text-gray-200 text-sm rounded-lg focus:ring-pink-500 focus:border-pink-500 block p-2.5 outline-none transition-colors placeholder-slate-400 dark:placeholder-gray-600">
+                            <p class="text-xs text-slate-500 dark:text-gray-500 mt-1">Leave empty to maintain original size. Aspect ratio is preserved.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dropzone -->
+                <div id="dropzone" class="border-2 border-dashed border-slate-300 dark:border-gray-700 rounded-2xl p-8 text-center transition-all cursor-pointer hover:border-pink-500 dark:hover:border-pink-500 hover:bg-slate-100 dark:hover:bg-[#1a1d24] bg-white dark:bg-[#15181e] group flex flex-col items-center justify-center min-h-[200px]">
+                    <input type="file" id="fileInput" multiple accept="image/*" class="hidden">
+                    <div class="bg-slate-100 dark:bg-gray-800/50 p-4 rounded-full mb-4 group-hover:bg-pink-100 dark:group-hover:bg-pink-500/10 transition-colors">
+                        <svg class="h-8 w-8 text-slate-400 dark:text-gray-400 group-hover:text-pink-500 dark:group-hover:text-pink-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-sm font-medium text-slate-700 dark:text-gray-200 mb-1">Drag & drop images</h3>
+                    <p class="text-xs text-slate-500 dark:text-gray-500">or click to browse</p>
+                </div>
+            </div>
+
+            <!-- Right Column: Queue & Processing -->
+            <div class="lg:col-span-2 flex flex-col">
+                
+                <!-- Action Bar -->
+                <div class="bg-white dark:bg-[#15181e] border border-slate-200 dark:border-gray-800 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 mb-6 shadow-lg transition-colors duration-300">
+                    <div class="text-slate-600 dark:text-gray-300 text-sm">
+                        <span id="queueStats" class="font-medium text-slate-900 dark:text-gray-100">0 files ready</span>
+                        <span class="text-slate-300 dark:text-gray-500 mx-2">|</span>
+                        <span id="totalSaved" class="text-pink-600 dark:text-pink-400 font-medium">Saved: 0 MB</span>
+                    </div>
+                    
+                    <div class="flex gap-3 w-full sm:w-auto">
+                        <button id="compressBtn" disabled class="flex-1 sm:flex-none bg-pink-600 hover:bg-pink-500 disabled:bg-slate-200 dark:disabled:bg-gray-800 disabled:text-slate-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed text-white font-medium py-2 px-5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20 disabled:shadow-none">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Compress 
+                        </button>
+                        <button id="downloadAllBtn" disabled class="flex-1 sm:flex-none bg-slate-100 dark:bg-[#1a1d24] hover:bg-slate-200 dark:hover:bg-gray-700 border border-slate-300 dark:border-gray-700 disabled:border-slate-100 dark:disabled:border-gray-800 disabled:text-slate-400 dark:disabled:text-gray-600 disabled:bg-slate-50 dark:disabled:bg-[#15181e] disabled:cursor-not-allowed text-slate-800 dark:text-white font-medium py-2 px-5 rounded-lg transition-colors flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            ZIP
+                        </button>
+                        <button id="clearBtn" class="p-2 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-400/10 rounded-lg transition-colors" title="Clear All">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- File List -->
+                <div id="results" class="space-y-3 flex-grow overflow-y-auto max-h-[600px] pr-2 pb-10">
+                    <!-- Empty State -->
+                    <div id="emptyState" class="h-full flex flex-col items-center justify-center text-slate-400 dark:text-gray-500 py-20">
+                        <svg class="w-16 h-16 mb-4 text-slate-300 dark:text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <p>No images in queue.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 flex flex-col gap-2 z-50"></div>
+
+    <script>
+        // DOM
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const resultsContainer = document.getElementById('results');
+        const emptyState = document.getElementById('emptyState');
+        const qualityInput = document.getElementById('quality');
+        const qualityValue = document.getElementById('qualityValue');
+        const formatInput = document.getElementById('format');
+        const maxDimInput = document.getElementById('maxDimension');
+        const compressBtn = document.getElementById('compressBtn');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const queueStatsEl = document.getElementById('queueStats');
+        const totalSavedEl = document.getElementById('totalSaved');
+        
+        // Theme Toggle Logic
+        const themeToggleBtn = document.getElementById('themeToggle');
+        themeToggleBtn.addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.theme = isDark ? 'dark' : 'light';
+        });
+
+        // Application State
+        const fileQueue = new Map(); // id -> fileData Object
+        let isProcessing = false;
+
+        // FileData Structure:
+        // { id, file, originalName, originalSize, status, progress, compressedBlob, compressedSize, thumbUrl }
+        // Statuses: 'pending', 'processing', 'done', 'error'
+
+        // Settings events
+        qualityInput.addEventListener('input', (e) => {
+            qualityValue.textContent = e.target.value + '%';
+        });
+
+        // Drag & Drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => {
+            dropzone.addEventListener(eName, e => {
+                e.preventDefault(); e.stopPropagation();
+            });
+        });
+        ['dragenter', 'dragover'].forEach(eName => {
+            dropzone.addEventListener(eName, () => dropzone.classList.add('dropzone-active'));
+        });
+        ['dragleave', 'drop'].forEach(eName => {
+            dropzone.addEventListener(eName, () => dropzone.classList.remove('dropzone-active'));
+        });
+
+        dropzone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', e => {
+            handleFiles(e.target.files);
+            fileInput.value = ''; 
+        });
+
+        function handleFiles(filesList) {
+            const files = Array.from(filesList).filter(f => f.type.startsWith('image/'));
+            if (files.length === 0) return;
+
+            files.forEach(file => {
+                const id = Math.random().toString(36).substring(2, 10);
+                const thumbUrl = URL.createObjectURL(file);
+                
+                fileQueue.set(id, {
+                    id,
+                    file,
+                    originalName: file.name,
+                    originalSize: file.size,
+                    status: 'pending',
+                    progress: 0,
+                    thumbUrl
+                });
+            });
+
+            updateUI();
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Render functions
+        function updateUI() {
+            if (fileQueue.size === 0) {
+                resultsContainer.innerHTML = '';
+                resultsContainer.appendChild(emptyState);
+                compressBtn.disabled = true;
+                downloadAllBtn.disabled = true;
+                queueStatsEl.textContent = '0 files ready';
+                totalSavedEl.textContent = 'Saved: 0 MB';
+                return;
+            }
+
+            if (resultsContainer.contains(emptyState)) {
+                resultsContainer.innerHTML = '';
+            }
+
+            let pendingCount = 0;
+            let doneCount = 0;
+            let totalOrig = 0;
+            let totalComp = 0;
+
+            // Sort logic: pending first, then processing, then done, to keep view stableish
+            const items = Array.from(fileQueue.values());
+            
+            items.forEach(item => {
+                if (item.status === 'pending') pendingCount++;
+                if (item.status === 'done') doneCount++;
+                
+                if (item.status === 'done' || item.status === 'error') {
+                    totalOrig += item.originalSize;
+                    if (item.compressedSize) totalComp += item.compressedSize;
+                }
+
+                let row = document.getElementById(`row-${item.id}`);
+                if (!row) {
+                    row = createRowElement(item);
+                    resultsContainer.appendChild(row);
+                } else {
+                    updateRowElement(row, item);
+                }
+            });
+
+            // Update stats
+            queueStatsEl.textContent = `${items.length} file${items.length > 1 ? 's' : ''} (${pendingCount} pending)`;
+            compressBtn.disabled = pendingCount === 0 || isProcessing;
+            downloadAllBtn.disabled = doneCount === 0;
+
+            const saved = totalOrig - totalComp;
+            if (doneCount > 0) {
+                if (saved > 0) {
+                    totalSavedEl.textContent = `Saved: ${formatBytes(saved)}`;
+                    totalSavedEl.className = "text-pink-600 dark:text-pink-400 font-medium";
+                } else {
+                    totalSavedEl.textContent = `Increased: ${formatBytes(Math.abs(saved))}`;
+                    totalSavedEl.className = "text-yellow-600 dark:text-yellow-500 font-medium";
+                }
+            } else {
+                totalSavedEl.textContent = 'Saved: 0 MB';
+                totalSavedEl.className = "text-pink-600 dark:text-pink-400 font-medium";
+            }
+        }
+
+        function createRowElement(item) {
+            const div = document.createElement('div');
+            div.id = `row-${item.id}`;
+            div.className = "bg-white dark:bg-[#15181e] border border-slate-200 dark:border-gray-800 rounded-xl p-3 flex flex-col md:flex-row items-center gap-4 transition-all shadow-sm dark:shadow-none";
+            
+            div.innerHTML = `
+                <div class="h-14 w-14 shrink-0 bg-slate-100 dark:bg-[#1a1d24] rounded-lg overflow-hidden flex items-center justify-center border border-slate-200 dark:border-gray-700 relative">
+                    <img src="${item.thumbUrl}" class="h-full w-full object-cover" alt="thumb">
+                </div>
+                
+                <div class="flex-grow min-w-0 w-full">
+                    <div class="flex justify-between mb-1">
+                        <h4 class="text-slate-800 dark:text-gray-200 font-medium truncate text-sm mr-4" title="${item.originalName}">${item.originalName}</h4>
+                        <span class="text-xs text-slate-500 dark:text-gray-500 shrink-0" id="size-${item.id}">${formatBytes(item.originalSize)}</span>
+                    </div>
+                    
+                    <!-- Progress / Stats Area -->
+                    <div id="status-${item.id}" class="h-5 flex items-center">
+                        <span class="text-xs text-pink-500 font-medium">Ready to compress</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0" id="actions-${item.id}">
+                    <button onclick="removeFile('${item.id}')" class="p-1.5 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 rounded-md transition-colors" title="Remove">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            `;
+            return div;
+        }
+
+        function updateRowElement(row, item) {
+            const statusContainer = row.querySelector(`#status-${item.id}`);
+            const actionsContainer = row.querySelector(`#actions-${item.id}`);
+            const sizeSpan = row.querySelector(`#size-${item.id}`);
+
+            if (item.status === 'pending') {
+                statusContainer.innerHTML = `<span class="text-xs text-slate-500 dark:text-gray-400">Ready</span>`;
+            } 
+            else if (item.status === 'processing') {
+                statusContainer.innerHTML = `
+                    <div class="w-full bg-slate-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                        <div class="bg-pink-500 h-1.5 rounded-full progress-bar-stripes" style="width: ${item.progress}%"></div>
+                    </div>
+                    <span class="text-xs text-pink-500 dark:text-pink-400 ml-2 w-8 text-right">${item.progress}%</span>
+                `;
+            } 
+            else if (item.status === 'done') {
+                const isLarger = item.compressedSize > item.originalSize;
+                const pct = Math.abs(((item.originalSize - item.compressedSize) / item.originalSize) * 100).toFixed(1);
+                
+                sizeSpan.innerHTML = `
+                    <span class="line-through text-slate-400 dark:text-gray-500 mr-2">${formatBytes(item.originalSize)}</span>
+                    <span class="${isLarger ? 'text-yellow-600 dark:text-yellow-500' : 'text-green-600 dark:text-green-400'} font-semibold">${formatBytes(item.compressedSize)}</span>
+                `;
+
+                statusContainer.innerHTML = `
+                    <span class="bg-${isLarger ? 'yellow' : 'green'}-500/10 text-${isLarger ? 'yellow' : 'green'}-500 dark:text-${isLarger ? 'yellow' : 'green'}-400 px-2 py-0.5 rounded text-[10px] border border-${isLarger ? 'yellow' : 'green'}-500/20 uppercase tracking-wider font-semibold">
+                        ${isLarger ? '+' : '-'}${pct}%
+                    </span>
+                `;
+
+                // Add download button if not present
+                if (!actionsContainer.querySelector('.dl-btn')) {
+                    actionsContainer.innerHTML = `
+                        <button onclick="downloadSingle('${item.id}')" class="dl-btn p-1.5 text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-500/10 rounded-md transition-colors" title="Download">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        </button>
+                        <button onclick="removeFile('${item.id}')" class="p-1.5 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 rounded-md transition-colors" title="Remove">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    `;
+                }
+            } 
+            else if (item.status === 'error') {
+                statusContainer.innerHTML = `<span class="text-xs text-red-500 dark:text-red-400">Error during compression</span>`;
+            }
+        }
+
+        // Actions
+        window.removeFile = function(id) {
+            const item = fileQueue.get(id);
+            if (item) {
+                URL.revokeObjectURL(item.thumbUrl);
+                fileQueue.delete(id);
+                const row = document.getElementById(`row-${id}`);
+                if (row) row.remove();
+                updateUI();
+            }
+        };
+
+        window.downloadSingle = function(id) {
+            const item = fileQueue.get(id);
+            if (item && item.compressedBlob) {
+                const ext = formatInput.value.split('/')[1];
+                const newName = item.originalName.replace(/\.[^/.]+$/, "") + "_compressed." + ext;
+                
+                const url = URL.createObjectURL(item.compressedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = newName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+            }
+        };
+
+        clearBtn.addEventListener('click', () => {
+            if(!confirm('Clear all files?')) return;
+            for (const [id, item] of fileQueue) {
+                URL.revokeObjectURL(item.thumbUrl);
+            }
+            fileQueue.clear();
+            resultsContainer.innerHTML = '';
+            updateUI();
+        });
+
+        // Batch Compression Logic
+        compressBtn.addEventListener('click', async () => {
+            if (isProcessing) return;
+            isProcessing = true;
+            updateUI();
+
+            const itemsToProcess = Array.from(fileQueue.values()).filter(i => i.status === 'pending');
+            
+            // Read settings
+            const quality = parseInt(qualityInput.value) / 100;
+            const fileType = formatInput.value;
+            const maxDimStr = maxDimInput.value;
+            
+            const options = {
+                maxSizeMB: 50, // Let quality dictate size, cap at 50MB
+                useWebWorker: true,
+                initialQuality: quality,
+                fileType: fileType,
+                onProgress: (progress) => {} // We will override this per file
+            };
+
+            if (maxDimStr && !isNaN(parseInt(maxDimStr))) {
+                options.maxWidthOrHeight = parseInt(maxDimStr);
+            }
+
+            showToast(`Starting compression of ${itemsToProcess.length} files...`);
+
+            // Process sequentially to not overload browser memory, Web Workers make it non-blocking
+            for (let i = 0; i < itemsToProcess.length; i++) {
+                const item = itemsToProcess[i];
+                item.status = 'processing';
+                item.progress = 0;
+                updateUI();
+
+                try {
+                    // Update options for specific file progress
+                    const fileOptions = { ...options, onProgress: (p) => {
+                        item.progress = p;
+                        updateUI();
+                    }};
+                    
+                    const compressedBlob = await imageCompression(item.file, fileOptions);
+                    
+                    item.compressedBlob = compressedBlob;
+                    item.compressedSize = compressedBlob.size;
+                    item.status = 'done';
+                    
+                } catch (err) {
+                    console.error("Compression error:", err);
+                    item.status = 'error';
+                }
+                
+                updateUI();
+            }
+
+            isProcessing = false;
+            updateUI();
+            showToast('Batch processing complete!', 'success');
+        });
+
+        // ZIP Download
+        downloadAllBtn.addEventListener('click', async () => {
+            const items = Array.from(fileQueue.values()).filter(i => i.status === 'done' && i.compressedBlob);
+            if (items.length === 0) return;
+
+            const ogText = downloadAllBtn.innerHTML;
+            downloadAllBtn.innerHTML = `<svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Zipping...`;
+            downloadAllBtn.disabled = true;
+
+            try {
+                const zip = new JSZip();
+                const ext = formatInput.value.split('/')[1];
+                
+                items.forEach(item => {
+                    let fileName = item.originalName.replace(/\.[^/.]+$/, "") + `.${ext}`;
+                    let counter = 1;
+                    while (zip.file(fileName)) {
+                        fileName = item.originalName.replace(/\.[^/.]+$/, "") + `_${counter}.${ext}`;
+                        counter++;
+                    }
+                    zip.file(fileName, item.compressedBlob);
+                });
+
+                const content = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(content);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "optimized_images.zip";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+                
+                showToast('ZIP downloaded successfully!', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to create ZIP', 'error');
+            } finally {
+                downloadAllBtn.innerHTML = ogText;
+                updateUI(); // restores disabled state based on queue
+            }
+        });
+
+        // Toast System
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            let colorCls = type === 'success' ? 'bg-green-500/10 border-green-500/20 text-green-400' 
+                         : type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                         : 'bg-pink-500/10 border-pink-500/20 text-pink-400';
+            
+            toast.className = `flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-sm transform transition-all duration-300 translate-y-10 opacity-0 ${colorCls} z-50`;
+            toast.innerHTML = `<span class="font-medium text-sm">${message}</span>`;
+            
+            document.getElementById('toastContainer').appendChild(toast);
+            
+            requestAnimationFrame(() => toast.classList.remove('translate-y-10', 'opacity-0'));
+            setTimeout(() => {
+                toast.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
