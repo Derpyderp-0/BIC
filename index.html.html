@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Image Compressor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+            color: #f8fafc; /* slate-50 */
+        }
+        .dropzone-active {
+            border-color: #3b82f6 !important; /* blue-500 */
+            background-color: rgba(59, 130, 246, 0.1) !important;
+        }
+        /* Custom Scrollbar for results */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 flex flex-col items-center">
+
+    <div class="w-full max-w-4xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-10 mt-6">
+            <h1 class="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 mb-4">
+                Bulk Image Compressor
+            </h1>
+            <p class="text-slate-400 text-lg">Compress images locally without losing dimensions. Fast, secure, and completely in your browser.</p>
+        </header>
+
+        <!-- Settings -->
+        <div class="bg-slate-800 rounded-xl p-6 mb-8 shadow-lg border border-slate-700">
+            <h2 class="text-xl font-semibold mb-4 text-slate-200">Compression Settings</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-2 flex justify-between">
+                        <span>Quality</span>
+                        <span id="qualityValue">80%</span>
+                    </label>
+                    <input type="range" id="quality" min="0" max="1" step="0.01" value="0.8" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                    <p class="text-xs text-slate-500 mt-1">Lower quality = smaller file size, more visual artifacts.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Output Format</label>
+                    <select id="format" class="w-full bg-slate-700 border border-slate-600 text-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition-colors">
+                        <option value="image/webp">WebP (Recommended)</option>
+                        <option value="image/jpeg">JPEG</option>
+                    </select>
+                    <p class="text-xs text-slate-500 mt-1">WebP supports transparency and offers better compression.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dropzone -->
+        <div id="dropzone" class="border-2 border-dashed border-slate-600 rounded-xl p-12 text-center transition-all cursor-pointer hover:border-slate-400 hover:bg-slate-800/50 bg-slate-800/20 group">
+            <input type="file" id="fileInput" multiple accept="image/*" class="hidden">
+            <svg class="mx-auto h-16 w-16 text-slate-400 group-hover:text-blue-400 transition-colors mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+            </svg>
+            <h3 class="text-xl font-medium text-slate-200 mb-2">Drag & drop images here</h3>
+            <p class="text-slate-400">or click to browse files</p>
+        </div>
+
+        <!-- Global Actions (Hidden initially) -->
+        <div id="globalActions" class="mt-8 flex justify-between items-center hidden bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div class="text-slate-300">
+                <span id="totalSaved" class="font-semibold text-emerald-400">Total Saved: 0 MB</span>
+                <span class="text-slate-500 ml-2" id="statsCount">(0 images)</span>
+            </div>
+            <button id="downloadAllBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/30">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Download All (ZIP)
+            </button>
+        </div>
+
+        <!-- Results List -->
+        <div id="results" class="mt-6 space-y-4 pb-12">
+            <!-- Items will be injected here -->
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 flex flex-col gap-2 z-50"></div>
+
+    <script>
+        // DOM Elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const resultsContainer = document.getElementById('results');
+        const qualityInput = document.getElementById('quality');
+        const qualityValue = document.getElementById('qualityValue');
+        const formatInput = document.getElementById('format');
+        const globalActions = document.getElementById('globalActions');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const totalSavedEl = document.getElementById('totalSaved');
+        const statsCountEl = document.getElementById('statsCount');
+        const toastContainer = document.getElementById('toastContainer');
+
+        // State
+        let processedImages = [];
+        let totalOriginalBytes = 0;
+        let totalCompressedBytes = 0;
+
+        // Settings Listeners
+        qualityInput.addEventListener('input', (e) => {
+            qualityValue.textContent = Math.round(e.target.value * 100) + '%';
+        });
+
+        // Drag and Drop Listeners
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, () => {
+                dropzone.classList.add('dropzone-active');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, () => {
+                dropzone.classList.remove('dropzone-active');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', handleDrop, false);
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFiles);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles({ target: { files } });
+        }
+
+        async function handleFiles(e) {
+            const files = Array.from(e.target.files).filter(file => file.type.startsWith('image/'));
+            if (files.length === 0) return;
+
+            const quality = parseFloat(qualityInput.value);
+            const format = formatInput.value;
+
+            showToast(`Processing ${files.length} images...`, 'info');
+
+            for (const file of files) {
+                try {
+                    const result = await compressImage(file, quality, format);
+                    processedImages.push(result);
+                    renderResult(result);
+                    updateStats();
+                } catch (error) {
+                    console.error("Error compressing image:", error);
+                    showToast(`Failed to compress ${file.name}`, 'error');
+                }
+            }
+
+            // Reset file input so same files can be selected again if needed
+            fileInput.value = '';
+            
+            if (processedImages.length > 0) {
+                globalActions.classList.remove('hidden');
+                showToast(`Successfully compressed ${files.length} images!`, 'success');
+            }
+        }
+
+        // Compression Core Logic using Canvas
+        function compressImage(file, quality, format) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = event => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        
+                        // If format is JPEG, we need a white background (no transparency)
+                        if (format === 'image/jpeg') {
+                            ctx.fillStyle = '#FFFFFF';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        }
+                        
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        canvas.toBlob(blob => {
+                            if (blob) {
+                                // Determine new extension based on format
+                                const ext = format === 'image/webp' ? 'webp' : 'jpg';
+                                const newName = file.name.replace(/\.[^/.]+$/, "") + "_compressed." + ext;
+                                
+                                resolve({
+                                    id: Math.random().toString(36).substr(2, 9),
+                                    originalName: file.name,
+                                    newName: newName,
+                                    originalSize: file.size,
+                                    compressedSize: blob.size,
+                                    blob: blob,
+                                    url: URL.createObjectURL(blob),
+                                    thumbnailUrl: img.src // Use original dataURL for quick thumbnail
+                                });
+                            } else {
+                                reject(new Error('Canvas toBlob failed'));
+                            }
+                        }, format, quality);
+                    };
+                    img.onerror = error => reject(error);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // UI Updates
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function renderResult(item) {
+            const savingsBytes = item.originalSize - item.compressedSize;
+            const savingsPercent = ((savingsBytes / item.originalSize) * 100).toFixed(1);
+            const isLarger = savingsBytes < 0;
+
+            const div = document.createElement('div');
+            div.className = "bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col md:flex-row items-center gap-4 hover:border-slate-600 transition-colors";
+            div.id = `item-${item.id}`;
+            
+            div.innerHTML = `
+                <div class="h-16 w-16 shrink-0 bg-slate-700 rounded-lg overflow-hidden flex items-center justify-center border border-slate-600">
+                    <img src="${item.thumbnailUrl}" class="h-full w-full object-cover" alt="thumbnail">
+                </div>
+                
+                <div class="flex-grow text-center md:text-left overflow-hidden w-full">
+                    <h4 class="text-slate-200 font-medium truncate mb-1" title="${item.newName}">${item.newName}</h4>
+                    <div class="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm">
+                        <span class="text-slate-400 line-through">${formatBytes(item.originalSize)}</span>
+                        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        <span class="${isLarger ? 'text-red-400' : 'text-emerald-400'} font-semibold">${formatBytes(item.compressedSize)}</span>
+                        
+                        ${isLarger 
+                            ? `<span class="bg-red-500/10 text-red-400 px-2 py-0.5 rounded text-xs border border-red-500/20">Larger by ${Math.abs(savingsPercent)}%</span>`
+                            : `<span class="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded text-xs border border-emerald-500/20">Saved ${savingsPercent}%</span>`
+                        }
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 w-full md:w-auto">
+                    <a href="${item.url}" download="${item.newName}" class="flex-1 md:flex-none text-center bg-slate-700 hover:bg-slate-600 text-slate-200 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <span class="md:hidden">Download</span>
+                    </a>
+                    <button onclick="removeImage('${item.id}')" class="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="Remove">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `;
+            resultsContainer.prepend(div);
+        }
+
+        // Action Handlers
+        window.removeImage = function(id) {
+            const index = processedImages.findIndex(img => img.id === id);
+            if (index > -1) {
+                // Free up memory
+                URL.revokeObjectURL(processedImages[index].url);
+                
+                processedImages.splice(index, 1);
+                document.getElementById(`item-${id}`).remove();
+                updateStats();
+
+                if (processedImages.length === 0) {
+                    globalActions.classList.add('hidden');
+                }
+            }
+        };
+
+        function updateStats() {
+            totalOriginalBytes = processedImages.reduce((acc, img) => acc + img.originalSize, 0);
+            totalCompressedBytes = processedImages.reduce((acc, img) => acc + img.compressedSize, 0);
+            
+            const saved = totalOriginalBytes - totalCompressedBytes;
+            
+            if (saved > 0) {
+                totalSavedEl.textContent = `Total Saved: ${formatBytes(saved)}`;
+                totalSavedEl.className = "font-semibold text-emerald-400";
+            } else if (saved < 0) {
+                totalSavedEl.textContent = `Total Increased: ${formatBytes(Math.abs(saved))}`;
+                totalSavedEl.className = "font-semibold text-red-400";
+            } else {
+                totalSavedEl.textContent = `Total Saved: 0 Bytes`;
+                totalSavedEl.className = "font-semibold text-slate-400";
+            }
+            
+            statsCountEl.textContent = `(${processedImages.length} images)`;
+        }
+
+        // ZIP Download functionality
+        downloadAllBtn.addEventListener('click', async () => {
+            if (processedImages.length === 0) return;
+            
+            const originalText = downloadAllBtn.innerHTML;
+            downloadAllBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Zipping...`;
+            downloadAllBtn.disabled = true;
+            downloadAllBtn.classList.add('opacity-75', 'cursor-not-allowed');
+
+            try {
+                const zip = new JSZip();
+                
+                // Add files to zip
+                processedImages.forEach(img => {
+                    // Prevent duplicate names in zip
+                    let fileName = img.newName;
+                    let counter = 1;
+                    while (zip.file(fileName)) {
+                        const parts = img.newName.split('.');
+                        const ext = parts.pop();
+                        fileName = `${parts.join('.')}_${counter}.${ext}`;
+                        counter++;
+                    }
+                    zip.file(fileName, img.blob);
+                });
+
+                const content = await zip.generateAsync({ type: "blob" });
+                
+                // Trigger download
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(content);
+                link.download = "compressed_images.zip";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Clean up zip blob url
+                setTimeout(() => URL.revokeObjectURL(link.href), 100);
+                showToast('ZIP file downloaded successfully', 'success');
+
+            } catch (error) {
+                console.error("Error creating ZIP:", error);
+                showToast('Failed to create ZIP file', 'error');
+            } finally {
+                downloadAllBtn.innerHTML = originalText;
+                downloadAllBtn.disabled = false;
+                downloadAllBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+            }
+        });
+
+        // Simple Toast Notification System
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            
+            let bgClass = 'bg-slate-800 border-slate-700 text-slate-200';
+            let icon = '';
+            
+            if (type === 'success') {
+                bgClass = 'bg-emerald-900/90 border-emerald-700 text-emerald-100';
+                icon = `<svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+            } else if (type === 'error') {
+                bgClass = 'bg-red-900/90 border-red-700 text-red-100';
+                icon = `<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+            } else {
+                icon = `<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+            }
+
+            toast.className = `flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 ${bgClass}`;
+            toast.innerHTML = `${icon} <span class="font-medium text-sm">${message}</span>`;
+            
+            toastContainer.appendChild(toast);
+            
+            // Animate in
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-10', 'opacity-0');
+            });
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                toast.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
