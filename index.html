@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bulk Compressor</title>
+    <title>Squoosh-Inspired Bulk Compressor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- High-Quality Compression Engine -->
@@ -88,9 +88,9 @@
                         <div>
                             <label class="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">Format</label>
                             <select id="format" class="w-full bg-slate-50 dark:bg-[#1a1d24] border border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-200 text-sm rounded-lg focus:ring-pink-500 focus:border-pink-500 block p-2.5 outline-none transition-colors">
+                                <option value="image/jpeg" selected>JPEG</option>
                                 <option value="image/webp">WebP (Recommended)</option>
                                 <option value="image/avif">AVIF (Modern Browsers)</option>
-                                <option value="image/jpeg">JPEG</option>
                                 <option value="image/png">PNG</option>
                             </select>
                         </div>
